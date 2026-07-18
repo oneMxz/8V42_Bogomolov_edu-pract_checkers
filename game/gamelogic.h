@@ -19,6 +19,7 @@ public:
         QPoint from;
         QPoint to;
         QVector<QPoint> captured;
+        bool becameKing =  false;
 
         Move() {}
         Move(const QPoint &f, const QPoint &t) : from(f), to(t) {}

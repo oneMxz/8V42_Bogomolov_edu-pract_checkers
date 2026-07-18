@@ -3,6 +3,9 @@
 
 #include <QWidget>
 #include <QTimer>
+
+#include <QPushButton>
+#include <QMessageBox>
 #include "../game/gamelogic.h"
 
 class CheckerBoard : public QWidget
@@ -11,11 +14,16 @@ class CheckerBoard : public QWidget
 
 public:
     explicit CheckerBoard(QWidget *parent = nullptr);
+    void resetGame();
+
+signals:
+    void exitToMenuRequested();
 
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     GameLogic m_logic;
@@ -29,8 +37,8 @@ private:
     bool isAnimating;
 
     QPoint hoverPos;
+    QPushButton *exitButton;
 
-    void resetGame();
     void startAnimation(const GameLogic::Move &move);
     void updateBoard();
 
@@ -46,6 +54,7 @@ private:
 
 private slots:
     void animate();
+    void onExitButtonClicked();
 };
 
 #endif

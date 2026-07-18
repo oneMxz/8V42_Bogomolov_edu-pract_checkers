@@ -9,12 +9,33 @@ CheckerBoard::CheckerBoard(QWidget *parent)
     , isAnimating(false)
     , hoverPos(-1, -1)
 {
-    setFixedSize(600, 650);
+    setFixedSize(600, 680);
     setMouseTracking(true);
 
     animTimer = new QTimer(this);
     animTimer->setInterval(16);
     connect(animTimer, &QTimer::timeout, this, &CheckerBoard::animate);
+    // ===== СОЗДАЕМ КНОПКУ =====
+    exitButton = new QPushButton("Выйти", this);
+    exitButton->setFont(QFont("Arial", 9, QFont::Bold));
+    exitButton->setStyleSheet(
+        "QPushButton {"
+        "   background-color: #4a4a4a;"
+        "   color: #ff9999;"
+        "   border: 1px solid #666666;"
+        "   border-radius: 4px;"
+        "   padding: 4px 8px;"
+        "}"
+        "QPushButton:hover {"
+        "   background-color: #5a5a5a;"
+        "   color: #ff6666;"
+        "}"
+        "QPushButton:pressed {"
+        "   background-color: #3a3a3a;"
+        "}"
+        );
+    connect(exitButton, &QPushButton::clicked, this, &CheckerBoard::onExitButtonClicked);
+    resetGame(); // ← теперь resetGame публичный
 }
 
 void CheckerBoard::resetGame()
@@ -34,10 +55,40 @@ void CheckerBoard::startAnimation(const GameLogic::Move &move)
     isAnimating = true;
     animTimer->start();
 }
+void CheckerBoard::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+
+    int size = width() / 8;
+    int y = 8 * size;
+    int h = height() - y;
+
+    // Позиционируем кнопку в левой части информационной панели
+    if (exitButton) {
+        exitButton->setGeometry(10, y + 8, 80, 28);
+    }
+}
 
 void CheckerBoard::updateBoard()
 {
     update();
+}
+
+void CheckerBoard::onExitButtonClicked()
+{
+    QMessageBox msgBox;
+    msgBox.setWindowTitle("Выход в меню");
+    msgBox.setText("Вы уверены, что хотите выйти в главное меню?");
+    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+    msgBox.button(QMessageBox::Yes)->setText("Да");
+    msgBox.button(QMessageBox::No)->setText("Нет");
+
+    int reply = msgBox.exec();
+
+    if (reply == QMessageBox::Yes) {
+        emit exitToMenuRequested();
+        this->hide();
+    }
 }
 
 // ============================================================
@@ -46,6 +97,8 @@ void CheckerBoard::updateBoard()
 
 void CheckerBoard::mousePressEvent(QMouseEvent *event)
 {
+    QPoint pos = event->pos();
+
     if (isAnimating) return;
     if (m_logic.isGameOver()) {
         resetGame();
@@ -249,14 +302,14 @@ void CheckerBoard::drawInfo(QPainter &p)
     int y = 8 * size;
     int h = height() - y;
 
-    p.fillRect(0, y, width(), h, QColor(50, 50, 50));
+    p.fillRect(0, y, width(), h, QColor(45, 45, 45));
     p.setPen(QPen(Qt::gray, 1));
     p.drawLine(0, y, width(), y);
 
     p.setPen(Qt::white);
     p.setFont(QFont("Arial", 10));
 
-    p.drawText(10, y + h/2 + 4, m_logic.isWhiteTurn() ? "Ход белых" : "Ход черных");
+    p.drawText(width() - 120, y + 20, m_logic.isWhiteTurn() ? "Ход белых" : "Ход черных");
 
     // Белые
     int wx = width() / 2 - 130;
