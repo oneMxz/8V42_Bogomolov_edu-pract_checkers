@@ -1,6 +1,5 @@
 name: Build and Release Checkers
 
-# Запуск при пуше в main/develop и при создании тега
 on:
   push:
     branches: [ main, develop ]
@@ -12,40 +11,40 @@ on:
 jobs:
   # ========== СБОРКА НА WINDOWS ==========
   build-windows:
-    name: Build on Windows
-    runs-on: windows-latest
-    # Запускаем всегда, кроме случаев, когда это только тег (релиз сделает отдельный job)
-    if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+  name: Build on Windows (MinGW)
+  runs-on: windows-latest
+  if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
+  
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7.2'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2022_64'
-          modules: 'qtwebsockets'
-          setup-python: false
+    - name: Install Qt with MinGW
+      uses: qt-actions/setup-qt@v4
+      with:
+        version: '6.11.1'               # совпадает с локальной версией
+        host: 'windows'
+        target: 'desktop'
+        arch: 'win64_mingw'             # MinGW 64-bit
+        # modules: 'qtwebsockets'       # если нужен модуль, укажите
 
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+    - name: Setup MinGW (если не добавлен автоматически)
+      uses: egor-tensin/setup-mingw@v2
+      with:
+        platform: x64
 
-      - name: Build with qmake
-        run: |
-          mkdir build
-          cd build
-          qmake ../Checkers.pro -spec win32-msvc
-          nmake
+    - name: Build with qmake (MinGW)
+      run: |
+        mkdir build
+        cd build
+        qmake ../Checkers.pro -spec win32-g++   # <-- MinGW спецификация
+        mingw32-make -j$(nproc)
 
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: checkers-windows
-          path: build/release/checkers.exe
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: checkers-windows
+        path: build/release/checkers.exe   
 
   # ========== СБОРКА НА UBUNTU ==========
   build-ubuntu:
@@ -61,17 +60,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            qt6-base-dev \
-            qt6-tools-dev \
-            qt6-tools-dev-tools \
-            libgl1-mesa-dev
+          build-essential \
+          qt6-base-dev \
+          qt6-tools-dev \
+          qt6-tools-dev-tools \
+          libgl1-mesa-dev
 
       - name: Build with qmake
         run: |
           mkdir build
           cd build
-          qmake ../Checkers.pro
+          qmake6 ../Checkers.pro
+          make -j$(nproc).pro
           make -j$(nproc)
 
       - name: Upload Ubuntu artifact
@@ -80,7 +80,7 @@ jobs:
           name: checkers-ubuntu
           path: build/checkers
 
-  # ========== СОЗДАНИЕ RELEASE (только по тегам) ==========
+  # ========== СОЗДАНИЕ RELEASE
   release:
     name: Create Release
     runs-on: ubuntu-latest
