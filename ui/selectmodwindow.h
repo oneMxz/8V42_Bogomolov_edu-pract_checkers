@@ -22,6 +22,7 @@ public:
 
 signals:
     void modeSelected(GameMode mode);
+    void networkModeSelected();
     void backRequested();
 
 protected:

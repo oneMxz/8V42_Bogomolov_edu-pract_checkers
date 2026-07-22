@@ -448,6 +448,39 @@ int GameLogic::countPieces(bool white) const
     return count;
 }
 
+
+void GameLogic::startTimer(int secondsPerPlayer)
+{
+    m_whiteTime = secondsPerPlayer;
+    m_blackTime = secondsPerPlayer;
+    m_timerEnabled = true;
+}
+
+void GameLogic::stopTimer()
+{
+    m_timerEnabled = false;
+}
+
+void GameLogic::updateTimer()
+{
+    if (!m_timerEnabled || m_gameOver) return;
+
+    if (m_isWhiteTurn) {
+        m_whiteTime--;
+    } else {
+        m_blackTime--;
+    }
+
+    if (m_whiteTime <= 0 || m_blackTime <= 0) {
+        m_gameOver = true;
+    }
+}
+
+bool GameLogic::isTimerExpired() const
+{
+    return m_whiteTime <= 0 || m_blackTime <= 0;
+}
+
 // ============================================================
 // ВСПОМОГАТЕЛЬНЫЕ
 // ============================================================

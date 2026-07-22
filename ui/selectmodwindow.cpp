@@ -110,7 +110,7 @@ void ModeSelect::connectSignals()
         emit modeSelected(ModeLocal);
     });
     connect(networkButton, &QPushButton::clicked, this, [this]() {
-        emit modeSelected(ModeNetwork);
+        emit networkModeSelected();
     });
     connect(backButton, &QPushButton::clicked, this, &ModeSelect::backRequested);
 }

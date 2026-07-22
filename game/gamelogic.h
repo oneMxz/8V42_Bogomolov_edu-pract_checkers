@@ -24,6 +24,7 @@ public:
         Move() {}
         Move(const QPoint &f, const QPoint &t) : from(f), to(t) {}
         bool isCapture() const { return !captured.isEmpty(); }
+        bool isValid() const { return from != to; }
     };
 
     GameLogic();
@@ -39,6 +40,7 @@ public:
     // Состояние игры
     bool isWhiteTurn() const { return m_isWhiteTurn; }
     bool isGameOver() const { return m_gameOver; }
+    void setGameOver(bool over) { m_gameOver = over; }
     int getWhiteCaptured() const { return m_whiteCaptured; }
     int getBlackCaptured() const { return m_blackCaptured; }
     int countPieces(bool white) const;
@@ -68,6 +70,13 @@ public:
 
     void setAvailableMoves(const QVector<Move> &moves) {m_availableMoves = moves;}
 
+    void startTimer(int secondsPerPlayer);
+    void stopTimer();
+    void updateTimer();  // уменьшить время на 1 секунду для текущего игрока
+    bool isTimerExpired() const;
+    int getWhiteTime() const { return m_whiteTime; }
+    int getBlackTime() const { return m_blackTime; }
+
 private:
     int board[8][8];
     bool m_isWhiteTurn;
@@ -87,6 +96,9 @@ private:
     // Внутреннее выполнение хода
     void applyMove(const Move &move);
     void makeKing(int row, int col);
+    int m_whiteTime = 0;     // секунд осталось у белых
+    int m_blackTime = 0;     // секунд осталось у черных
+    bool m_timerEnabled = false;
 };
 
 #endif // GAMELOGIC_H
