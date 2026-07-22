@@ -26,3 +26,8 @@ HEADERS += \
     ui/mainwindow.h \
     ui/networkwindow.h \
     ui/selectmodwindow.h
+
+win32 {
+    QMAKE_CXXFLAGS += -municode
+    QMAKE_LFLAGS += -municode
+}
