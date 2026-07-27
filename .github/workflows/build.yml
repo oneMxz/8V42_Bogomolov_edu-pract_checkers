@@ -112,15 +112,13 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-make
 
-      - name: Install Qt 6.11.1 (MinGW)
+      - name: Install Qt 6.8.0 (MinGW)
         uses: jurplel/install-qt-action@v4
         with:
-          version: '6.11.1'
+          version: '6.8.0'
           host: 'windows'
           target: 'desktop'
           arch: 'win64_mingw'
-          modules: ''
-          setup-python: false
 
       - name: Build with qmake (MinGW)
         shell: cmd
