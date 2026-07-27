@@ -66,10 +66,8 @@ jobs:
           host: 'linux'
           target: 'desktop'
           arch: 'linux_gcc_64'
-          modules: ''
-          setup-python: false
 
-      - name: Install system dependencies (for OpenGL)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev
@@ -95,7 +93,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ---------- ШАГ 3: СБОРКА НА WINDOWS (MinGW) ----------
+  # ---------- ШАГ 3: СБОРКА НА WINDOWS (MSVC) ----------
   build-windows:
     needs: create-release
     runs-on: windows-latest
@@ -103,40 +101,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup MSYS2 (for MinGW compiler)
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
-
-      - name: Install Qt 6.8.0 (MinGW)
+      - name: Install Qt 6.8.0 (MSVC)
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.0'
           host: 'windows'
           target: 'desktop'
-          arch: 'win64_mingw'
+          arch: 'win64_msvc2022'
 
-      - name: Build with qmake (MinGW)
-        shell: cmd
+      - name: Set up Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build with qmake (MSVC)
         run: |
-          set PATH=C:\msys64\mingw64\bin;%PATH%
           mkdir build
           cd build
-          qmake ../Checkers.pro -spec win32-g++ CONFIG+=release
-          mingw32-make
+          qmake ../Checkers.pro -spec win32-msvc CONFIG+=release
+          nmake
 
       - name: Deploy Qt dependencies (windeployqt)
-        shell: cmd
         run: |
           cd build
           windeployqt release/checkers.exe --no-translations --no-quick-import --no-virtualkeyboard --no-opengl-sw
 
       - name: Package (ZIP)
-        shell: cmd
         run: |
           cd build
           powershell Compress-Archive -Path release\* -DestinationPath checkers-windows.zip
@@ -149,7 +137,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ---------- ШАГ 4: ОПУБЛИКОВАТЬ РЕЛИЗ (перевод из черновика) ----------
+  # ---------- ШАГ 4: ОПУБЛИКОВАТЬ РЕЛИЗ ----------
   publish-release:
     needs: [create-release, build-linux, build-windows]
     runs-on: ubuntu-latest
