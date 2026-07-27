@@ -64,11 +64,6 @@ QVector<GameLogic::Move> GameLogic::generateMoves(int row, int col) const
     return moves;
 }
 
-QVector<GameLogic::Move> GameLogic::generateMovesForPiece(int row, int col) const
-{
-    return generateMoves(row, col);
-}
-
 void GameLogic::getSimpleMoves(int row, int col, QVector<Move> &moves) const
 {
     int dir = isWhite(board[row][col]) ? -1 : 1;
@@ -180,97 +175,68 @@ void GameLogic::getKingCaptures(int row, int col, QVector<Move> &moves) const
 
     for (int dr : {-1, 1}) {
         for (int dc : {-1, 1}) {
-            // Ищем все возможные позиции для рубки на этом направлении
             int r = row + dr;
             int c = col + dc;
 
-            // Собираем всех врагов на пути
-            QVector<QPoint> enemiesOnPath;
-
+            // Идём по диагонали до первой непустой клетки
             while (isValid(r, c)) {
-                if (board[r][c] != Empty) {
-                    int enemy = board[r][c];
-                    bool isEnemy = (white && isBlackPiece(enemy)) || (!white && isWhite(enemy));
-                    if (isEnemy) {
-                        enemiesOnPath.append(QPoint(c, r));
+                if (board[r][c] == Empty) {
+                    r += dr;
+                    c += dc;
+                    continue;
+                }
+
+                // Нашли непустую клетку
+                int enemy = board[r][c];
+                bool isEnemy = (white && isBlackPiece(enemy)) || (!white && isWhite(enemy));
+                if (!isEnemy) {
+                    // Своя шашка – дальше не идём (прерываем направление)
+                    break;
+                }
+
+                // Это враг. Проверяем все свободные клетки за ним
+                int br = r + dr;
+                int bc = c + dc;
+                while (isValid(br, bc) && board[br][bc] == Empty) {
+                    // Создаём ход с захватом этого одного врага
+                    Move move(QPoint(col, row), QPoint(bc, br));
+                    move.captured.append(QPoint(c, r));
+
+                    // Временно применяем ход для поиска продолжения
+                    int tempBoard[8][8];
+                    memcpy(tempBoard, board, sizeof(board));
+                    const_cast<GameLogic*>(this)->board[r][c] = Empty;
+                    const_cast<GameLogic*>(this)->board[br][bc] = piece;
+                    const_cast<GameLogic*>(this)->board[row][col] = Empty;
+
+                    QVector<Move> next;
+                    const_cast<GameLogic*>(this)->getKingCaptures(br, bc, next);
+
+                    if (!next.isEmpty()) {
+                        for (const Move &nm : next) {
+                            if (!nm.captured.isEmpty()) {
+                                Move full = move;
+                                full.captured.append(nm.captured);
+                                full.to = nm.to;
+                                full.becameKing = move.becameKing || nm.becameKing;
+                                moves.append(full);
+                            }
+                        }
                     } else {
-                        // Своя шашка - дальше не идем
-                        break;
+                        moves.append(move);
                     }
+
+                    // Восстанавливаем доску
+                    memcpy(const_cast<GameLogic*>(this)->board, tempBoard, sizeof(board));
+
+                    // Проверяем следующую пустую клетку за врагом
+                    br += dr;
+                    bc += dc;
                 }
-                r += dr;
-                c += dc;
-            }
 
-            // Если нашли врагов, проверяем куда можно встать
-            if (!enemiesOnPath.isEmpty()) {
-                // Идем от последнего врага дальше, ищем пустые клетки
-                QPoint lastEnemy = enemiesOnPath.last();
-                int startR = lastEnemy.y() + dr;
-                int startC = lastEnemy.x() + dc;
-
-                int checkR = startR;
-                int checkC = startC;
-
-                while (isValid(checkR, checkC) && board[checkR][checkC] == Empty) {
-                    // Нашли пустую клетку - это потенциальный ход
-                    QVector<QPoint> capturedThisMove;
-
-                    // Собираем всех врагов между row,col и checkR,checkC
-                    int tempR = row + dr;
-                    int tempC = col + dc;
-                    while (tempR != checkR || tempC != checkC) {
-                        if (isValid(tempR, tempC) && board[tempR][tempC] != Empty) {
-                            int enemy = board[tempR][tempC];
-                            bool isEnemy = (white && isBlackPiece(enemy)) || (!white && isWhite(enemy));
-                            if (isEnemy) {
-                                capturedThisMove.append(QPoint(tempC, tempR));
-                            }
-                        }
-                        tempR += dr;
-                        tempC += dc;
-                    }
-
-                    if (!capturedThisMove.isEmpty()) {
-                        Move move(QPoint(col, row), QPoint(checkC, checkR));
-                        move.captured = capturedThisMove;
-
-                        // Проверяем цепочку
-                        int tempBoard[8][8];
-                        memcpy(tempBoard, board, sizeof(board));
-
-                        // Убираем побитых
-                        for (const QPoint &p : move.captured) {
-                            const_cast<GameLogic*>(this)->board[p.y()][p.x()] = Empty;
-                        }
-                        // Перемещаем дамку
-                        const_cast<GameLogic*>(this)->board[checkR][checkC] = piece;
-                        const_cast<GameLogic*>(this)->board[row][col] = Empty;
-
-                        // Проверяем продолжение
-                        QVector<Move> next;
-                        const_cast<GameLogic*>(this)->getKingCaptures(checkR, checkC, next);
-
-                        if (!next.isEmpty()) {
-                            for (const Move &nm : next) {
-                                if (!nm.captured.isEmpty()) {
-                                    Move full = move;
-                                    full.captured.append(nm.captured);
-                                    full.to = nm.to;
-                                    full.becameKing = move.becameKing || nm.becameKing;
-                                    moves.append(full);
-                                }
-                            }
-                        } else {
-                            moves.append(move);
-                        }
-
-                        memcpy(const_cast<GameLogic*>(this)->board, tempBoard, sizeof(board));
-                    }
-
-                    checkR += dr;
-                    checkC += dc;
-                }
+                // После обработки этого врага (неважно, есть ли за ним пустые клетки)
+                // прекращаем движение по этому направлению – дальше врагов не рассматриваем
+                break;
             }
         }
     }

@@ -1,22 +1,23 @@
 #include "checkerboard.h"
 #include <QPainter>
 #include <QMouseEvent>
-#include <QDebug>
 #include <QMessageBox>
 #include <QFile>
 #include <QTextStream>
 #include <QDateTime>
+#include <QTimer>
 #include <QDir>
 
-CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),isAnimating(false),hoverPos(-1, -1)
+CheckerBoard::CheckerBoard(QWidget *parent)
+    : QWidget(parent), animProgress(0.0f), isAnimating(false), hoverPos(-1, -1)
 {
-    setFixedSize(600, 680);
+    setFixedSize(BOARD_SIZE + 220, BOARD_SIZE + 100);
     setMouseTracking(true);
 
     animTimer = new QTimer(this);
     animTimer->setInterval(16);
     connect(animTimer, &QTimer::timeout, this, &CheckerBoard::animate);
-    // ===== СОЗДАЕМ КНОПКУ =====
+
     exitButton = new QPushButton("Выйти", this);
     exitButton->setFont(QFont("Arial", 9, QFont::Bold));
     exitButton->setStyleSheet(
@@ -51,7 +52,9 @@ CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),i
         "   background-color: #27ae60;"
         "}"
         );
-    // ===== ЧАТ =====
+    connect(saveButton, &QPushButton::clicked, this, &CheckerBoard::onSaveButtonClicked);
+
+    int chatLeft = BOARD_SIZE + 10;
     m_chatDisplay = new QTextEdit(this);
     m_chatDisplay->setReadOnly(true);
     m_chatDisplay->setStyleSheet(
@@ -64,7 +67,7 @@ CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),i
         "   padding: 4px;"
         "}"
         );
-    m_chatDisplay->setGeometry(610, 50, 180, 400);  // справа от доски
+    m_chatDisplay->setGeometry(chatLeft, 50, 190, 450);
 
     m_chatInput = new QLineEdit(this);
     m_chatInput->setPlaceholderText("Сообщение...");
@@ -78,7 +81,7 @@ CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),i
         "   font-size: 11px;"
         "}"
         );
-    m_chatInput->setGeometry(610, 455, 150, 28);
+    m_chatInput->setGeometry(chatLeft, 505, 160, 28);
 
     m_sendButton = new QPushButton("➤", this);
     m_sendButton->setStyleSheet(
@@ -93,7 +96,7 @@ CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),i
         "   background-color: #2980b9;"
         "}"
         );
-    m_sendButton->setGeometry(765, 455, 28, 28);
+    m_sendButton->setGeometry(chatLeft + 165, 505, 28, 28);
 
     connect(m_sendButton, &QPushButton::clicked, this, &CheckerBoard::onSendMessageClicked);
     connect(m_chatInput, &QLineEdit::returnPressed, this, &CheckerBoard::onSendMessageClicked);
@@ -101,9 +104,13 @@ CheckerBoard::CheckerBoard(QWidget *parent):QWidget(parent),animProgress(0.0f),i
     m_timer = new QTimer(this);
     m_timer->setInterval(1000);
     connect(m_timer, &QTimer::timeout, this, &CheckerBoard::onTimerTick);
-    connect(saveButton, &QPushButton::clicked, this, &CheckerBoard::onSaveButtonClicked);
+
     resetGame();
     m_moveHistory.clear();
+
+    m_chatDisplay->setVisible(false);
+    m_chatInput->setVisible(false);
+    m_sendButton->setVisible(false);
 }
 
 void CheckerBoard::resetGame()
@@ -114,9 +121,11 @@ void CheckerBoard::resetGame()
     update();
     m_moveHistory.clear();
     m_moveCounter = 0;
-    if (m_timer) {
-        m_logic.startTimer(300);  // 5 минут на игрока
+    if (m_timer && !m_networkMode) {
+        m_logic.startTimer(300);
         m_timer->start();
+    } else if (m_timer && m_networkMode) {
+        m_timer->stop();
     }
     update();
 }
@@ -135,83 +144,50 @@ void CheckerBoard::setAIMode(bool enabled, bool aiIsWhite)
 {
     m_aiMode = enabled;
     m_aiIsWhite = aiIsWhite;
-    qDebug() << "=== AI MODE SET ===";
-    qDebug() << "  enabled:" << enabled;
-    qDebug() << "  aiIsWhite:" << aiIsWhite;
 }
 
 void CheckerBoard::makeAIMove()
 {
-    qDebug() << "=== makeAIMove CALLED ===";
-    if (!m_aiMode || m_logic.isGameOver()) {
-        qDebug() << "  AI disabled or game over, exiting";
+    if (!m_aiMode || m_logic.isGameOver())
         return;
-    }
 
-    // Проверяем, что сейчас ход AI
     bool aiTurn = (m_aiIsWhite && m_logic.isWhiteTurn()) ||
                   (!m_aiIsWhite && !m_logic.isWhiteTurn());
-
-    qDebug() << "  aiTurn:" << aiTurn;
-    qDebug() << "  isWhiteTurn:" << m_logic.isWhiteTurn();
-
-    if (!aiTurn) {
-        qDebug() << "  not AI's turn, exiting";
+    if (!aiTurn)
         return;
-    }
 
-    // ===== СОБИРАЕМ ВСЕ ХОДЫ ДЛЯ AI =====
+    // Собираем все возможные ходы для фигур AI
     QVector<GameLogic::Move> allAIMoves;
     for (int r = 0; r < 8; ++r) {
         for (int c = 0; c < 8; ++c) {
             int piece = m_logic.getCell(r, c);
             bool isMine = (m_aiIsWhite && m_logic.isWhite(piece)) ||
                           (!m_aiIsWhite && m_logic.isBlackPiece(piece));
-            if (isMine) {
+            if (isMine)
                 allAIMoves.append(m_logic.generateMoves(r, c));
-            }
         }
     }
-    // Устанавливаем доступные ходы для AI
     m_logic.setAvailableMoves(allAIMoves);
 
-    // Получаем лучший ход от игрового интеллекта
     GameLogic::Move aiMove = m_gameAI.getBestMove(m_logic, m_aiIsWhite);
-    qDebug() << "  aiMove.from:" << aiMove.from;
-    qDebug() << "  aiMove.to:" << aiMove.to;
-    qDebug() << "  aiMove.isValid():" << aiMove.isValid();
-
     if (aiMove.isValid()) {
-        qDebug() << "  → AI MAKING MOVE";
         if (m_logic.makeMove(aiMove)) {
             startAnimation(aiMove);
             update();
             recordMove(aiMove);
-
-            if (m_aiMode && !m_logic.isGameOver()) {
-                makeAIMove();  // рекурсивный вызов, если продолжение рубки
-            }
+            // Если после хода игра не завершена, AI продолжает (принудительная рубка)
+            if (m_aiMode && !m_logic.isGameOver())
+                makeAIMove();
         }
-    } else {
-        qDebug() << "  ✗ AI move is INVALID";
     }
 }
-
 
 void CheckerBoard::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-
-    int size = width() / 8;
-    int y = 8 * size;
-
-    // Позиционируем кнопку в левой части информационной панели
-    if (exitButton) {
-        exitButton->setGeometry(10, y + 8, 80, 28);
-    }
-    if (saveButton) {
-        saveButton->setGeometry(10, y + 40, 80, 28);  // справа от exitButton
-    }
+    int y = BOARD_SIZE + 8;
+    exitButton->setGeometry(10, y, 80, 28);
+    saveButton->setGeometry(10, y + 32, 80, 28);
 }
 
 void CheckerBoard::updateBoard()
@@ -222,19 +198,21 @@ void CheckerBoard::updateBoard()
 void CheckerBoard::onExitButtonClicked()
 {
     QMessageBox msgBox;
-    msgBox.setWindowTitle("Выход в меню");
-    msgBox.setText("Вы уверены, что хотите выйти в главное меню?");
+    msgBox.setWindowTitle("Выход в лобби");
+    msgBox.setText("Вы уверены, что хотите покинуть игру?");
     msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
     msgBox.button(QMessageBox::Yes)->setText("Да");
     msgBox.button(QMessageBox::No)->setText("Нет");
 
     int reply = msgBox.exec();
-
     if (reply == QMessageBox::Yes) {
-        emit exitToMenuRequested();
-        this->hide();
+        if (m_networkMode && m_client)
+            m_client->sendLeaveRoom();
+        emit exitToLobbyRequested();
+        hide();
     }
 }
+
 void CheckerBoard::onSaveButtonClicked()
 {
     if (m_moveHistory.isEmpty()) {
@@ -245,9 +223,7 @@ void CheckerBoard::onSaveButtonClicked()
     QMessageBox::information(this, "Сохранение", "Партия сохранена в файл checkers_game.txt");
 }
 
-// ============================================================
-// СОБЫТИЯ МЫШИ
-// ============================================================
+// ===== Обработка событий мыши =====
 
 void CheckerBoard::mousePressEvent(QMouseEvent *event)
 {
@@ -260,14 +236,10 @@ void CheckerBoard::mousePressEvent(QMouseEvent *event)
     if (m_aiMode) {
         bool aiTurn = (m_aiIsWhite && m_logic.isWhiteTurn()) ||
                       (!m_aiIsWhite && !m_logic.isWhiteTurn());
-        if (aiTurn) {
-            // Это ход AI, не даём игроку взаимодействовать
-            return;
-        }
+        if (aiTurn) return;
     }
-    if (m_networkMode && !m_isMyTurn) {
-        return;  // Не наш ход
-    }
+
+    if (m_networkMode && !m_isMyTurn) return;
 
     QPoint cell = getCell(event->pos());
     int row = cell.y();
@@ -277,46 +249,33 @@ void CheckerBoard::mousePressEvent(QMouseEvent *event)
 
     int piece = m_logic.getCell(row, col);
 
-    // Проверяем клик по доступному ходу
-    for (const GameLogic::Move &move : m_logic.getAvailableMoves()) {
-        if (move.to == cell) {
-            if (m_logic.makeMove(move)) {
-                startAnimation(move);
+    // Проверяем, не кликнули ли по доступному ходу
+    for (const GameLogic::Move &availMove : m_logic.getAvailableMoves()) {
+        if (availMove.to == cell) {
+            if (m_networkMode) {
+                if (m_client) {
+                    m_client->sendMakeMove(availMove.from.y(), availMove.from.x(),
+                                           availMove.to.y(), availMove.to.x());
+                }
+                m_isMyTurn = false;
+                m_logic.setSelected(QPoint(-1, -1));
+                m_logic.setAvailableMoves(QVector<GameLogic::Move>());
                 update();
-                recordMove(move);
-                if (m_networkMode && m_client) {
-                    m_client->sendMakeMove(
-                        move.from.y(),
-                        move.from.x(),
-                        move.to.y(),
-                        move.to.x()
-                        );
-                    m_isMyTurn = false;  // Ждём ответа от сервера
-                }
+                return;
+            }
 
-                if (m_logic.isGameOver()) {
-                    saveGameHistory();
-                    // Можно также показать сообщение или обновить интерфейс
-                }
-
-                // ===== AI ХОДИТ ПОСЛЕ ИГРОКА =====
-                if (m_aiMode && !m_logic.isGameOver()) {
-                    bool aiTurn = (m_aiIsWhite && m_logic.isWhiteTurn())||(!m_aiIsWhite && !m_logic.isWhiteTurn());
-                    qDebug() << "=== AFTER PLAYER MOVE ===";
-                    qDebug() << "  m_aiMode:" << m_aiMode;
-                    qDebug() << "  aiTurn:" << aiTurn;
-                    qDebug() << "  isWhiteTurn:" << m_logic.isWhiteTurn();
-                    if (aiTurn) {
-                        qDebug() << "  → CALLING makeAIMove()";
-                        makeAIMove();
-                    }
-                }
+            if (m_logic.makeMove(availMove)) {
+                startAnimation(availMove);
+                update();
+                recordMove(availMove);
+                if (m_aiMode && !m_logic.isGameOver())
+                    makeAIMove();
             }
             return;
         }
     }
 
-    // Выбор шашки
+    // Выбор своей шашки
     bool isMine = (m_logic.isWhiteTurn() && m_logic.isWhite(piece)) ||
                   (!m_logic.isWhiteTurn() && m_logic.isBlackPiece(piece));
 
@@ -334,17 +293,14 @@ void CheckerBoard::mousePressEvent(QMouseEvent *event)
 void CheckerBoard::mouseMoveEvent(QMouseEvent *event)
 {
     QPoint cell = getCell(event->pos());
-    if (m_logic.isValid(cell.y(), cell.x()) && m_logic.isBlack(cell.y(), cell.x())) {
+    if (m_logic.isValid(cell.y(), cell.x()) && m_logic.isBlack(cell.y(), cell.x()))
         hoverPos = cell;
-    } else {
+    else
         hoverPos = QPoint(-1, -1);
-    }
     update();
 }
 
-// ============================================================
-// АНИМАЦИЯ
-// ============================================================
+// ===== Анимация =====
 
 void CheckerBoard::animate()
 {
@@ -357,9 +313,7 @@ void CheckerBoard::animate()
     update();
 }
 
-// ============================================================
-// ОТРИСОВКА
-// ============================================================
+// ===== Отрисовка =====
 
 void CheckerBoard::paintEvent(QPaintEvent *event)
 {
@@ -375,31 +329,31 @@ void CheckerBoard::paintEvent(QPaintEvent *event)
     drawHover(p);
     drawInfo(p);
 
-    if (m_logic.isGameOver()) drawGameOver(p);
+    if (m_logic.isGameOver())
+        drawGameOver(p);
 }
 
 void CheckerBoard::drawBoard(QPainter &p)
 {
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
 
     for (int r = 0; r < 8; r++) {
         for (int c = 0; c < 8; c++) {
             QRect rect(c * size, r * size, size, size);
-            if ((r + c) % 2 == 1) {
+            if ((r + c) % 2 == 1)
                 p.fillRect(rect, QColor(181, 136, 99));
-            } else {
+            else
                 p.fillRect(rect, QColor(240, 217, 181));
-            }
         }
     }
 
     p.setPen(QPen(Qt::black, 2));
-    p.drawRect(0, 0, 8 * size, 8 * size);
+    p.drawRect(0, 0, BOARD_SIZE, BOARD_SIZE);
 }
 
 void CheckerBoard::drawCheckers(QPainter &p)
 {
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
     int margin = size / 8;
 
     const int (&board)[8][8] = m_logic.getBoard();
@@ -450,7 +404,7 @@ void CheckerBoard::drawSelection(QPainter &p)
     QPoint selected = m_logic.getSelected();
     if (selected.x() == -1) return;
 
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
     QRect rect(selected.x() * size, selected.y() * size, size, size);
 
     p.fillRect(rect, QColor(255, 255, 0, 80));
@@ -460,7 +414,7 @@ void CheckerBoard::drawSelection(QPainter &p)
 
 void CheckerBoard::drawMoves(QPainter &p)
 {
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
 
     for (const GameLogic::Move &move : m_logic.getAvailableMoves()) {
         QRect rect(move.to.x() * size + size/4,
@@ -468,11 +422,10 @@ void CheckerBoard::drawMoves(QPainter &p)
                    size/2,
                    size/2);
 
-        if (!move.captured.isEmpty()) {
+        if (!move.captured.isEmpty())
             p.setBrush(QColor(255, 0, 0, 180));
-        } else {
+        else
             p.setBrush(QColor(0, 255, 0, 180));
-        }
 
         p.setPen(Qt::NoPen);
         p.drawEllipse(rect);
@@ -483,15 +436,14 @@ void CheckerBoard::drawHover(QPainter &p)
 {
     if (hoverPos.x() == -1 || isAnimating) return;
 
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
     QRect rect(hoverPos.x() * size, hoverPos.y() * size, size, size);
     p.fillRect(rect, QColor(255, 255, 255, 40));
 }
 
 void CheckerBoard::drawInfo(QPainter &p)
 {
-    int size = width() / 8;
-    int y = 8 * size;
+    int y = BOARD_SIZE;
     int h = height() - y;
 
     p.fillRect(0, y, width(), h, QColor(45, 45, 45));
@@ -510,8 +462,6 @@ void CheckerBoard::drawInfo(QPainter &p)
                            .arg(m_logic.getBlackTime() % 60, 2, 10, QChar('0'));
     p.drawText(width() - 120, y + h/2 + 4, timeText);
 
-
-    // Белые
     int wx = width() / 2 - 130;
     p.setBrush(Qt::white);
     p.setPen(QPen(Qt::black, 1));
@@ -519,22 +469,17 @@ void CheckerBoard::drawInfo(QPainter &p)
     p.setPen(Qt::white);
     p.drawText(wx + 25, y + h/2 + 4, "Побито: " + QString::number(m_logic.getBlackCaptured()));
 
-    // Черные
     int bx = width() / 2 + 30;
     p.setBrush(Qt::black);
     p.setPen(QPen(Qt::white, 1));
     p.drawEllipse(bx, y + 10, 18, 18);
     p.setPen(Qt::white);
     p.drawText(bx + 25, y + h/2 + 4, "Побито: " + QString::number(m_logic.getWhiteCaptured()));
-
-    p.setPen(QColor(200, 200, 200));
 }
 
 void CheckerBoard::drawGameOver(QPainter &p)
 {
-    int size = width() / 8;
-    int infoHeight = height() - 8 * size;
-
+    int infoHeight = height() - BOARD_SIZE;
     p.fillRect(0, 0, width(), height() - infoHeight, QColor(0, 0, 0, 180));
 
     p.setPen(Qt::white);
@@ -548,13 +493,11 @@ void CheckerBoard::drawGameOver(QPainter &p)
                Qt::AlignCenter, "Кликните для новой игры");
 }
 
-// ============================================================
-// ВСПОМОГАТЕЛЬНЫЕ
-// ============================================================
+// ===== Вспомогательные методы =====
 
 QPoint CheckerBoard::getCell(const QPoint &pos) const
 {
-    int size = width() / 8;
+    int size = BOARD_SIZE / 8;
     return QPoint(pos.x() / size, pos.y() / size);
 }
 
@@ -567,7 +510,7 @@ void CheckerBoard::saveGameHistory()
     QTextStream out(&file);
     out << "=== Партия " << QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss") << " ===\n";
     out << "Режим: " << (m_aiMode ? "Против компьютера" : "Два игрока") << "\n";
-    out << "Победитель: " << (m_logic.isWhiteTurn() ? "<Белые" : "Чёрные") << "\n";
+    out << "Победитель: " << (m_logic.isWhiteTurn() ? "Черные" : "Белые") << "\n";
     out << "Счёт: " << m_logic.getWhiteCaptured() << "-" << m_logic.getBlackCaptured() << "\n";
     out << "Ходы:\n";
     for (const QString &move : m_moveHistory) {
@@ -589,58 +532,31 @@ void CheckerBoard::recordMove(const GameLogic::Move &move)
 
 void CheckerBoard::onTimerTick()
 {
-    if (!m_timer || !m_timer->isActive()) return;  // ← ЗАЩИТА
+    if (!m_timer || !m_timer->isActive()) return;
     m_logic.updateTimer();
     update();
     if (m_logic.isTimerExpired()) {
         m_timer->stop();
-        // Определяем победителя по счёту
         QString winner;
-        if (m_logic.getWhiteCaptured() > m_logic.getBlackCaptured()) {
+        if (m_logic.getWhiteCaptured() > m_logic.getBlackCaptured())
             winner = "Белые";
-        } else if (m_logic.getBlackCaptured() > m_logic.getWhiteCaptured()) {
+        else if (m_logic.getBlackCaptured() > m_logic.getWhiteCaptured())
             winner = "Черные";
-        } else {
+        else
             winner = "Ничья";
-        }
         m_logic.setGameOver(true);
         update();
     }
 }
 
-void CheckerBoard::setNetworkMode(bool enabled, const QString &host, quint16 port)
+void CheckerBoard::setNetworkMode(bool enabled)
 {
     m_networkMode = enabled;
-
     m_chatDisplay->setVisible(enabled);
     m_chatInput->setVisible(enabled);
     m_sendButton->setVisible(enabled);
-
-    if (!enabled) {
-        if (m_client) {
-            m_client->disconnectFromServer();
-            delete m_client;
-            m_client = nullptr;
-        }
-        return;
-    }
-
-    m_client = new Client(this);
-    connect(m_client, &Client::connected, this, &CheckerBoard::onConnected);
-    connect(m_client, &Client::disconnected, this, &CheckerBoard::onDisconnected);
-    connect(m_client, &Client::error, this, &CheckerBoard::onNetworkError);
-    connect(m_client, &Client::roomCreated, this, &CheckerBoard::onRoomCreated);
-    connect(m_client, &Client::roomJoined, this, &CheckerBoard::onRoomJoined);
-    connect(m_client, &Client::gameStarted, this, &CheckerBoard::onGameStarted);
-    connect(m_client, &Client::gameState, this, &CheckerBoard::onGameState);
-    connect(m_client, &Client::yourTurn, this, &CheckerBoard::onYourTurn);
-    connect(m_client, &Client::opponentTurn, this, &CheckerBoard::onOpponentTurn);
-    connect(m_client, &Client::gameOver, this, &CheckerBoard::onGameOver);
-    connect(m_client, &Client::chatMessage, this, &CheckerBoard::onChatMessage);
-    connect(m_client, &Client::colorAssigned, this, &CheckerBoard::onColorAssigned);
-    connect(m_client, &Client::timerUpdate, this, &CheckerBoard::onTimerUpdate);
-
-    m_client->connectToServer(host, port);
+    if (enabled && m_timer)
+        m_timer->stop();
 }
 
 void CheckerBoard::setPlayerName(const QString &name)
@@ -648,20 +564,17 @@ void CheckerBoard::setPlayerName(const QString &name)
     m_playerName = name;
 }
 
-// === СЕТЕВЫЕ СЛОТЫ ===
+// ===== Сетевые слоты =====
 
 void CheckerBoard::onConnected()
 {
-    qDebug() << "Connected to server";
     addSystemMessage("Подключено к серверу");
-    if (m_client) {
+    if (m_client)
         m_client->sendConnect(m_playerName);
-    }
 }
 
 void CheckerBoard::onDisconnected()
 {
-    qDebug() << "Disconnected from server";
     addSystemMessage("Отключено от сервера");
     m_networkMode = false;
     m_isMyTurn = false;
@@ -669,16 +582,14 @@ void CheckerBoard::onDisconnected()
 
 void CheckerBoard::onRoomCreated(quint16 roomId)
 {
-    qDebug() << "Room created:" << roomId;
-    // Можно показать ID комнаты или сразу войти
+    Q_UNUSED(roomId)
 }
 
 void CheckerBoard::onRoomJoined(quint16 roomId, const QString &playerName)
 {
-    qDebug() << playerName << "joined room" << roomId;
+    Q_UNUSED(playerName)
     addSystemMessage(QString("Вы вошли в комнату %1").arg(roomId));
 }
-
 
 void CheckerBoard::onPlayerJoined(const QString &playerName)
 {
@@ -690,10 +601,8 @@ void CheckerBoard::onPlayerLeft(const QString &playerName)
     addSystemMessage(QString("%1 покинул комнату").arg(playerName));
 }
 
-
 void CheckerBoard::onGameStarted()
 {
-    qDebug() << "Game started!";
     addSystemMessage("Игра началась!");
     m_logic.reset();
     update();
@@ -701,27 +610,44 @@ void CheckerBoard::onGameStarted()
 
 void CheckerBoard::onGameState(const BoardState &state)
 {
-    // Обновляем доску из сетевого состояния
+    // Копируем состояние доски
     for (int r = 0; r < 8; ++r) {
         for (int c = 0; c < 8; ++c) {
-            // Устанавливаем состояние через GameLogic
+            m_logic.setCell(r, c, state.board[r][c]);
         }
     }
+
+    m_logic.setWhiteTurn(state.isWhiteTurn);
+    m_logic.setWhiteCaptured(state.whiteCaptured);
+    m_logic.setBlackCaptured(state.blackCaptured);
+
+    if (m_networkMode) {
+        bool myTurn = (state.isWhiteTurn && m_myColorIsWhite) ||
+                      (!state.isWhiteTurn && !m_myColorIsWhite);
+        m_isMyTurn = myTurn;
+    }
+
+    if (state.hasContinuation) {
+        QPoint sel(state.selectedCol, state.selectedRow);
+        m_logic.setSelected(sel);
+        QVector<GameLogic::Move> moves = m_logic.generateMoves(sel.y(), sel.x());
+        m_logic.setAvailableMoves(moves);
+    } else {
+        m_logic.setSelected(QPoint(-1, -1));
+        m_logic.setAvailableMoves(QVector<GameLogic::Move>());
+    }
+
     update();
 }
 
 void CheckerBoard::onYourTurn()
 {
-    m_isMyTurn = true;
-    qDebug() << "Your turn!";
+    // m_isMyTurn уже установлен в onGameState
     addSystemMessage("Ваш ход!");
-    // Разрешаем игроку ходить
 }
 
 void CheckerBoard::onOpponentTurn()
 {
-    m_isMyTurn = false;
-    qDebug() << "Opponent's turn...";
     addSystemMessage("Ход соперника...");
 }
 
@@ -729,13 +655,18 @@ void CheckerBoard::onGameOver(const QString &winner)
 {
     addSystemMessage(QString("Игра окончена! %1 победил!").arg(winner));
     QMessageBox::information(this, "Игра окончена", winner + " победил!");
+    if (m_networkMode && m_client) {
+        m_client->sendLeaveRoom();
+        QTimer::singleShot(1500, this, [this]() {
+            emit exitToLobbyRequested();
+            hide();
+        });
+    }
 }
 
 void CheckerBoard::onChatMessage(const QString &sender, const QString &message)
 {
-    // Добавляем сообщение в чат (нужно реализовать UI чата)
     addChatMessage(sender, message);
-    qDebug() << "[" << sender << "]" << message;
 }
 
 void CheckerBoard::onColorAssigned(bool isWhite)
@@ -747,8 +678,9 @@ void CheckerBoard::onColorAssigned(bool isWhite)
 
 void CheckerBoard::onTimerUpdate(int whiteTime, int blackTime)
 {
-    // Обновляем таймер
-    //setTimer(whiteTime, blackTime);
+    m_logic.setWhiteTime(whiteTime);
+    m_logic.setBlackTime(blackTime);
+    update();
 }
 
 void CheckerBoard::addChatMessage(const QString &sender, const QString &message)
@@ -762,22 +694,41 @@ void CheckerBoard::onSendMessageClicked()
     QString message = m_chatInput->text().trimmed();
     if (message.isEmpty()) return;
 
-    // Если сетевой режим — отправляем через клиент
-    if (m_networkMode && m_client) {
+    if (m_networkMode && m_client)
         m_client->sendChatMessage(message);
-    } else {
-        // Локально добавляем сообщение (для теста)
-        addChatMessage(m_playerName.isEmpty() ? "Я" : m_playerName, message);
-    }
     m_chatInput->clear();
 }
+
 void CheckerBoard::addSystemMessage(const QString &message)
 {
     QString formatted = QString("🔔 %1").arg(message);
     m_chatDisplay->append(formatted);
 }
+
 void CheckerBoard::onNetworkError(const QString &message)
 {
     addSystemMessage("Ошибка: " + message);
     QMessageBox::critical(this, "Ошибка сети", message);
+}
+
+void CheckerBoard::setClient(Client *client)
+{
+    if (m_client == client) return;
+    m_client = client;
+
+    if (m_client) {
+        connect(m_client, &Client::connected, this, &CheckerBoard::onConnected);
+        connect(m_client, &Client::disconnected, this, &CheckerBoard::onDisconnected);
+        connect(m_client, &Client::error, this, &CheckerBoard::onNetworkError);
+        connect(m_client, &Client::roomCreated, this, &CheckerBoard::onRoomCreated);
+        connect(m_client, &Client::roomJoined, this, &CheckerBoard::onRoomJoined);
+        connect(m_client, &Client::gameStarted, this, &CheckerBoard::onGameStarted);
+        connect(m_client, &Client::gameState, this, &CheckerBoard::onGameState);
+        connect(m_client, &Client::yourTurn, this, &CheckerBoard::onYourTurn);
+        connect(m_client, &Client::opponentTurn, this, &CheckerBoard::onOpponentTurn);
+        connect(m_client, &Client::gameOver, this, &CheckerBoard::onGameOver);
+        connect(m_client, &Client::chatMessage, this, &CheckerBoard::onChatMessage);
+        connect(m_client, &Client::colorAssigned, this, &CheckerBoard::onColorAssigned);
+        connect(m_client, &Client::timerUpdate, this, &CheckerBoard::onTimerUpdate);
+    }
 }

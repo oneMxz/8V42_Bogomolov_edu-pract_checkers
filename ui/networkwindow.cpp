@@ -16,19 +16,16 @@ void NetworkWindow::setupUI()
     mainLayout->setSpacing(10);
     mainLayout->setContentsMargins(15, 15, 15, 15);
 
-    // Заголовок
-    QLabel *titleLabel = new QLabel("🌐 Сетевая игра", this);
+    QLabel *titleLabel = new QLabel("Сетевая игра", this);
     titleLabel->setAlignment(Qt::AlignCenter);
     titleLabel->setFont(QFont("Arial", 18, QFont::Bold));
     mainLayout->addWidget(titleLabel);
 
-    // Статус
     m_statusLabel = new QLabel("Подключение к серверу...", this);
     m_statusLabel->setAlignment(Qt::AlignCenter);
     m_statusLabel->setStyleSheet("color: #888; font-size: 12px;");
     mainLayout->addWidget(m_statusLabel);
 
-    // Список комнат
     QLabel *roomLabel = new QLabel("Доступные комнаты:", this);
     roomLabel->setFont(QFont("Arial", 11, QFont::Bold));
     mainLayout->addWidget(roomLabel);
@@ -49,7 +46,6 @@ void NetworkWindow::setupUI()
     m_roomList->setMinimumHeight(150);
     mainLayout->addWidget(m_roomList);
 
-    // Кнопки управления комнатами
     QHBoxLayout *roomButtonsLayout = new QHBoxLayout();
     m_createRoomButton = new QPushButton("Создать комнату", this);
     m_createRoomButton->setStyleSheet(
@@ -203,6 +199,10 @@ void NetworkWindow::setPlayerName(const QString &name)
 
 void NetworkWindow::onCreateRoomClicked()
 {
+    if (m_currentRoomId != 0) {
+        QMessageBox::information(this, "Информация", "Вы уже находитесь в комнате");
+        return;
+    }
     if (!m_client) {
         QMessageBox::warning(this, "Ошибка", "Клиент не инициализирован!");
         return;
@@ -242,27 +242,32 @@ void NetworkWindow::onSendMessageClicked()
 
     if (m_client && m_client->isConnected()) {
         m_client->sendChatMessage(message);
-        addChatMessage(m_playerName, message);
         m_chatInput->clear();
     }
 }
-
 void NetworkWindow::onBackClicked()
 {
-    if (m_client) {
-        m_client->disconnectFromServer();
+    if (m_client && m_currentRoomId != 0) {
+        m_client->sendLeaveRoom();
     }
+    resetState();   // сброс
     emit backToMenuRequested();
 }
-
+void NetworkWindow::onLeaveRoomClicked()
+{
+    if (m_currentRoomId == 0) return;
+    if (m_client) {
+        m_client->disconnectFromServer();
+        m_currentRoomId = 0;
+        m_gameStarted = false;
+        m_statusLabel->setText("Вы покинули комнату");
+        addChatMessage("Система", "Вы покинули комнату");
+    }
+}
 void NetworkWindow::onRoomList(const QVector<QPair<quint16, QString>> &rooms)
 {
-    qDebug() << "=== NetworkWindow::onRoomList ===";
-    qDebug() << "  Rooms count:" << rooms.size();
-
     m_roomList->clear();
     for (const auto &room : rooms) {
-        qDebug() << "  Room:" << room.first << "players:" << room.second;
         QListWidgetItem *item = new QListWidgetItem(
             QString("Комната %1 (%2 игроков)").arg(room.first).arg(room.second)
             );
@@ -281,11 +286,7 @@ void NetworkWindow::onRoomJoined(quint16 roomId, const QString &playerName)
 void NetworkWindow::onRoomCreated(quint16 roomId)
 {
     m_currentRoomId = roomId;
-    m_statusLabel->setText(QString("✅ Комната %1 создана, ожидаем игроков...").arg(roomId));
     addChatMessage("Система", "Вы создали комнату. Ожидайте второго игрока.");
-    // Можно автоматически войти в комнату (но сервер уже добавил игрока)
-    // Если хотите, чтобы после создания сразу перейти к доске, эмитируйте сигнал:
-    // emit joinRoomRequested(roomId);
 }
 
 void NetworkWindow::onPlayerJoined(const QString &playerName)
@@ -305,7 +306,11 @@ void NetworkWindow::onChatMessage(const QString &sender, const QString &message)
 
 void NetworkWindow::onGameStarted()
 {
-    QMessageBox::information(this, "Игра началась", "Игра началась! Переход к доске...");
+    if (m_gameStarted) {
+        return;
+    }
+    m_gameStarted = true;
+    addChatMessage("Система", "Игра началась! Переход к доске...");
     emit joinRoomRequested(m_currentRoomId);
 }
 
@@ -329,8 +334,9 @@ void NetworkWindow::updateRoomList(const QVector<QPair<quint16, QString>> &rooms
 void NetworkWindow::startServer()
 {
     if (m_server) {
-        addChatMessage("Система", "Сервер уже запущен!");
-        return;
+        m_server->stopServer();
+        delete m_server;
+        m_server = nullptr;
     }
 
     m_server = new Server(this);
@@ -338,7 +344,10 @@ void NetworkWindow::startServer()
         addChatMessage("Ошибка", "Не удалось запустить сервер на порту 5555!");
         return;
     }
-
-    qDebug() << "Server started on port 5555, listening:" << m_server->isListening();
     addChatMessage("Система", "✅ Сервер запущен на порту 5555!");
+}
+void NetworkWindow::resetState()
+{
+    m_currentRoomId = 0;
+    m_gameStarted = false;
 }

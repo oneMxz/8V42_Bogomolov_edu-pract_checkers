@@ -7,12 +7,12 @@
 #include <QMessageBox>
 #include <QTextEdit>
 #include <QLineEdit>
-#include <QTimer>
 
 #include "../game/gamelogic.h"
 #include "../game/gamecomp.h"
 #include "../network/client.h"
 #include "../network/protocol.h"
+
 
 class CheckerBoard : public QWidget
 {
@@ -20,14 +20,17 @@ class CheckerBoard : public QWidget
 
 public:
     explicit CheckerBoard(QWidget *parent = nullptr);
+
     void resetGame();
     void setAIMode(bool enabled, bool aiIsWhite = false);
-    void setNetworkMode(bool enabled, const QString &host = "", quint16 port = 5555);
+    void setNetworkMode(bool enabled);
     void setPlayerName(const QString &name);
+    void setClient(Client *client);
     bool isNetworkMode() const { return m_networkMode; }
 
 signals:
     void exitToMenuRequested();
+    void exitToLobbyRequested();
     void chatMessageSent(const QString &message);
     void moveToNetwork(int fromRow, int fromCol, int toRow, int toCol);
 
@@ -38,32 +41,10 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
 
 private:
-    GameLogic m_logic;
+    // Размер доски в пикселях (константа)
+    static constexpr int BOARD_SIZE = 600;
 
-    // Анимация
-    QPoint animFrom;
-    QPoint animTo;
-    QVector<QPoint> animCaptured;
-    float animProgress;
-    QTimer *animTimer;
-    bool isAnimating;
-
-    bool m_aiMode = false;
-    bool m_aiIsWhite = false;
-    GameAI m_gameAI;
-    QPoint hoverPos;
-    QPushButton *exitButton;
-    QPushButton *saveButton;
-
-    void startAnimation(const GameLogic::Move &move);
-    void updateBoard();
-
-    QStringList m_moveHistory;   // история ходов
-    void saveGameHistory();    // сохранить в файл
-
-    void recordMove(const GameLogic::Move &move);
-    int m_moveCounter = 0;
-
+    //Вспомогательные методы отрисовки
     void drawBoard(QPainter &p);
     void drawCheckers(QPainter &p);
     void drawSelection(QPainter &p);
@@ -71,24 +52,54 @@ private:
     void drawHover(QPainter &p);
     void drawInfo(QPainter &p);
     void drawGameOver(QPainter &p);
-    QTimer *m_timer;          // тикает каждую секунду
 
-    QPoint getCell(const QPoint &pos) const;
+    //Анимация
+    void startAnimation(const GameLogic::Move &move);
+
+    //Ходы и история
+    void recordMove(const GameLogic::Move &move);
+    void saveGameHistory();
     void makeAIMove();
 
+    //Вспомогательные
+    QPoint getCell(const QPoint &pos) const;
+    void addChatMessage(const QString &sender, const QString &message);
+    void addSystemMessage(const QString &message);
+    void updateBoard();   // Просто вызывает update()
+
+    // Игровая логика
+    GameLogic m_logic;
+    bool m_aiMode = false;
+    bool m_aiIsWhite = false;
+    GameAI m_gameAI;
+    QPoint hoverPos;
+
+    // Анимация
+    QPoint animFrom;
+    QPoint animTo;
+    QVector<QPoint> animCaptured;
+    float animProgress = 0.0f;
+    QTimer *animTimer = nullptr;
+    bool isAnimating = false;
+    QPushButton *exitButton = nullptr;
+    QPushButton *saveButton = nullptr;
+    QTextEdit *m_chatDisplay = nullptr;
+    QLineEdit *m_chatInput = nullptr;
+    QPushButton *m_sendButton = nullptr;
+
+    // История ходов
+    QStringList m_moveHistory;
+    int m_moveCounter = 0;
+
+    // Таймер для локального режима
+    QTimer *m_timer = nullptr;
+
+    // Сетевые переменные
     Client *m_client = nullptr;
     bool m_networkMode = false;
     bool m_isMyTurn = false;
     bool m_myColorIsWhite = false;
     QString m_playerName;
-
-    // Чат
-    QTextEdit *m_chatDisplay;
-    QLineEdit *m_chatInput;
-    QPushButton *m_sendButton;
-
-    void addChatMessage(const QString &sender, const QString &message);
-    void addSystemMessage(const QString &message);
 
 private slots:
     void animate();
@@ -96,8 +107,10 @@ private slots:
     void onSaveButtonClicked();
     void onSendMessageClicked();
 
+    // Таймер
     void onTimerTick();
-    // ===== СЕТЕВЫЕ СЛОТЫ (ДОБАВИТЬ ВСЕ) =====
+
+    // Сетевые слоты
     void onConnected();
     void onDisconnected();
     void onNetworkError(const QString &message);
@@ -115,4 +128,4 @@ private slots:
     void onTimerUpdate(int whiteTime, int blackTime);
 };
 
-#endif
+#endif // CHECKERBOARD_H

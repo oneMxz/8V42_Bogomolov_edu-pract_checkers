@@ -1,4 +1,3 @@
-
 #ifndef SELECTMODWINDOW_H
 #define SELECTMODWINDOW_H
 
@@ -29,14 +28,14 @@ protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    void setupUI();
+    void connectSignals();
+
     QPushButton *aiButton;
     QPushButton *localButton;
     QPushButton *networkButton;
     QPushButton *backButton;
     QLabel *titleLabel;
-
-    void setupUI();
-    void connectSignals();
 };
 
 #endif

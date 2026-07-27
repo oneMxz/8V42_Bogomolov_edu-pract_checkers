@@ -1,6 +1,5 @@
 #include "client.h"
 #include <QDataStream>
-#include <QDebug>
 
 Client::Client(QObject *parent)
     : QObject(parent)
@@ -27,9 +26,8 @@ bool Client::connectToServer(const QString &host, quint16 port)
 
 void Client::disconnectFromServer()
 {
-    if (m_socket->state() == QTcpSocket::ConnectedState) {
+    if (m_socket->state() == QTcpSocket::ConnectedState)
         m_socket->disconnectFromHost();
-    }
 }
 
 bool Client::isConnected() const
@@ -43,17 +41,13 @@ void Client::sendConnect(const QString &playerName)
     QByteArray data;
     QDataStream out(&data, QIODevice::WriteOnly);
     out.setVersion(QDataStream::Qt_6_0);
-
-    // ===== ПЕРЕДАЁМ СТРОКУ КАК QByteArray =====
     QByteArray nameData = playerName.toUtf8();
     out << nameData;
-
     sendMessage(MessageType::Connect, data);
 }
 
 void Client::sendCreateRoom()
 {
-    qDebug() << "Sending CreateRoom message";
     sendMessage(MessageType::CreateRoom);
 }
 
@@ -90,51 +84,45 @@ void Client::sendChatMessage(const QString &message)
     sendMessage(MessageType::ChatMessage, data);
 }
 
+void Client::sendLeaveRoom()
+{
+    sendMessage(MessageType::LeaveRoom);
+}
+
 void Client::sendMessage(MessageType type, const QByteArray &data)
 {
     if (m_socket->state() != QTcpSocket::ConnectedState) return;
-
-    QByteArray message;
-    QDataStream out(&message, QIODevice::WriteOnly);
-    out.setVersion(QDataStream::Qt_6_0);
-    out << static_cast<quint8>(type);
-    out << data;
-    m_socket->write(message);
+    SocketUtils::sendMessage(m_socket, static_cast<quint8>(type), data);
 }
 
 void Client::onConnected()
 {
-    qDebug() << "Connected to server";
     emit connected();
 }
 
 void Client::onDisconnected()
 {
-    qDebug() << "Disconnected from server";
     emit disconnected();
 }
 
 void Client::onReadyRead()
 {
-    QDataStream in(m_socket);
-    in.setVersion(QDataStream::Qt_6_0);
-
-    while (m_socket->bytesAvailable() >= sizeof(quint8)) {
-        quint8 type;
-        in >> type;
-        processMessage(in, static_cast<MessageType>(type));
-    }
+    quint8 type;
+    QByteArray data;
+    while (SocketUtils::readMessage(m_socket, type, data))
+        processMessage(data, static_cast<MessageType>(type));
 }
 
-void Client::processMessage(QDataStream &in, MessageType type)
+void Client::processMessage(const QByteArray &data, MessageType type)
 {
+    QDataStream in(data);
     in.setVersion(QDataStream::Qt_6_0);
+
     switch (type) {
     case MessageType::ConnectionAccepted: {
-        QByteArray messageData;
-        in >> messageData;
-        QString message = QString::fromUtf8(messageData);
-        qDebug() << "Connection accepted:" << message;
+        QByteArray msgData;
+        in >> msgData;
+        // сообщение игнорируется
         break;
     }
     case MessageType::RoomCreated: {
@@ -149,76 +137,59 @@ void Client::processMessage(QDataStream &in, MessageType type)
         QByteArray nameData;
         in >> roomId;
         in >> nameData;
-        QString playerName = QString::fromUtf8(nameData);
-        emit roomJoined(roomId, playerName);
+        emit roomJoined(roomId, QString::fromUtf8(nameData));
         break;
     }
     case MessageType::RoomList: {
         quint16 roomCount;
         in >> roomCount;
-        qDebug() << "  roomCount read:" << roomCount;
-
         QVector<QPair<quint16, QString>> rooms;
         for (int i = 0; i < roomCount; ++i) {
-            quint16 roomId;
-            quint16 playerCount;
+            quint16 roomId, playerCount;
             in >> roomId;
             in >> playerCount;
             rooms.append(qMakePair(roomId, QString::number(playerCount)));
         }
-
-        qDebug() << "Received room list. Rooms count:" << rooms.size();
         emit roomList(rooms);
         break;
     }
-
-    case MessageType::GameStarted: {
+    case MessageType::GameStarted:
         emit gameStarted();
         break;
-    }
     case MessageType::GameState: {
         BoardState state;
         in >> state;
         emit gameState(state);
         break;
     }
-    case MessageType::YourTurn: {
+    case MessageType::YourTurn:
         emit yourTurn();
         break;
-    }
-    case MessageType::OpponentTurn: {
+    case MessageType::OpponentTurn:
         emit opponentTurn();
         break;
-    }
-
     case MessageType::GameOver: {
         QByteArray winnerData;
         in >> winnerData;
-        QString winner = QString::fromUtf8(winnerData);
-        emit gameOver(winner);
+        emit gameOver(QString::fromUtf8(winnerData));
         break;
     }
-
     case MessageType::ChatBroadcast: {
         QByteArray senderData, messageData;
         in >> senderData >> messageData;
-        QString sender = QString::fromUtf8(senderData);
-        QString message = QString::fromUtf8(messageData);
-        emit chatMessage(sender, message);
+        emit chatMessage(QString::fromUtf8(senderData), QString::fromUtf8(messageData));
         break;
     }
     case MessageType::PlayerJoined: {
         QByteArray nameData;
         in >> nameData;
-        QString playerName = QString::fromUtf8(nameData);
-        emit playerJoined(playerName);
+        emit playerJoined(QString::fromUtf8(nameData));
         break;
     }
     case MessageType::PlayerLeft: {
         QByteArray nameData;
         in >> nameData;
-        QString playerName = QString::fromUtf8(nameData);
-        emit playerLeft(playerName);
+        emit playerLeft(QString::fromUtf8(nameData));
         break;
     }
     case MessageType::ColorAssigned: {
@@ -233,8 +204,22 @@ void Client::processMessage(QDataStream &in, MessageType type)
         emit timerUpdate(whiteTime, blackTime);
         break;
     }
+    case MessageType::RoomFull:
+        emit error("Комната заполнена");
+        break;
+    case MessageType::ConnectionRejected: {
+        QByteArray msgData;
+        in >> msgData;
+        emit error("Подключение отклонено: " + QString::fromUtf8(msgData));
+        break;
+    }
+    case MessageType::Error: {
+        QByteArray msgData;
+        in >> msgData;
+        emit error(QString::fromUtf8(msgData));
+        break;
+    }
     default:
-        qDebug() << "Unknown message type:" << static_cast<int>(type);
         break;
     }
 }

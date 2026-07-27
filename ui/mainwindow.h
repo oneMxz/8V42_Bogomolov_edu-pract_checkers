@@ -14,19 +14,18 @@ public:
     explicit MainMenu(QWidget *parent = nullptr);
 
 signals:
-    void newGameRequested();    // Запрос на новую игру
-    void exitRequested();       // Запрос на выход
-
+    void newGameRequested();
+    void exitRequested();
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
+    void setupUI();
+    void connectSignals();
+
     QPushButton *newGameButton;
     QPushButton *exitButton;
     QLabel *titleLabel;
-
-    void setupUI();
-    void connectSignals();
 };
 
 #endif 

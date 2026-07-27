@@ -21,6 +21,7 @@ public:
     void setClient(Client *client);
     void setPlayerName(const QString &name);
     void startServer();
+    void resetState();
 
 signals:
     void joinRoomRequested(quint16 roomId);
@@ -42,13 +43,19 @@ private slots:
     void onJoinRoomClicked();
     void onSendMessageClicked();
     void onBackClicked();
+    void onLeaveRoomClicked();
 
 private:
+    void setupUI();
+    void connectSignals();
+    void addChatMessage(const QString &sender, const QString &message);
+    void updateRoomList(const QVector<QPair<quint16, QString>> &rooms);
+
     Client *m_client = nullptr;
     QString m_playerName;
     quint16 m_currentRoomId = 0;
+    bool m_gameStarted = false;
 
-    // UI элементы
     QListWidget *m_roomList;
     QTextEdit *m_chatDisplay;
     QLineEdit *m_chatInput;
@@ -58,11 +65,6 @@ private:
     QPushButton *m_backButton;
     QLabel *m_statusLabel;
     Server *m_server = nullptr;
-
-    void setupUI();
-    void connectSignals();
-    void addChatMessage(const QString &sender, const QString &message);
-    void updateRoomList(const QVector<QPair<quint16, QString>> &rooms);
 };
 
 #endif // NETWORKWINDOW_H

@@ -10,13 +10,13 @@
 #include "../game/gamelogic.h"
 
 struct Player {
-    QTcpSocket *socket;
-    QString name;
-    quint16 id;
-    bool isReady = false;
-    bool isSpectator = false;
-    bool isWhite = false;
-    quint16 roomId = 0;
+    QTcpSocket *socket;     //Сокет клиента
+    QString name;           //Имя игрока
+    quint16 id;             //Уникальный идентификатор
+    bool isReady = false;   //Готов ли игрок (не используется)
+    bool isSpectator = false; //Является ли зрителем
+    bool isWhite = false;   //Играет ли белыми
+    quint16 roomId = 0;   //ID комнаты, в которой находится
 };
 
 struct Room {
@@ -55,6 +55,24 @@ private slots:
     void onTimerTick();
 
 private:
+    //Обработчики входящих сообщений
+    void handleConnect(QTcpSocket *socket, QDataStream &in);
+    void handleCreateRoom(QTcpSocket *socket);
+    void handleJoinRoom(QTcpSocket *socket, QDataStream &in);
+    void handleMakeMove(QTcpSocket *socket, QDataStream &in);
+    void handleChatMessage(QTcpSocket *socket, QDataStream &in);
+    void handleLeaveRoom(QTcpSocket *socket);
+
+    void broadcastToRoom(Room *room, MessageType type, const QByteArray &data);
+    void sendToPlayer(QTcpSocket *socket, MessageType type, const QByteArray &data);
+    void sendGameState(Room *room);
+    void sendRoomListToAll();
+
+    void startGame(Room *room);
+    void scheduleRestart(Room *room);
+    void checkGameOver(Room *room);
+
+
     QTcpServer *m_server;
     QVector<QTcpSocket*> m_clients;
     QMap<QTcpSocket*, Player*> m_players;
@@ -63,22 +81,10 @@ private:
     quint16 m_nextPlayerId = 1;
     QTimer *m_timer;
 
+    //Вспомогательные методы для поиска
     Player* getPlayer(QTcpSocket *socket);
     Room* getRoom(quint16 roomId);
     Room* getRoomByPlayer(QTcpSocket *socket);
-
-    void handleConnect(QTcpSocket *socket, QDataStream &in);
-    void handleCreateRoom(QTcpSocket *socket);
-    void handleJoinRoom(QTcpSocket *socket, QDataStream &in);
-    void handleMakeMove(QTcpSocket *socket, QDataStream &in);
-    void handleChatMessage(QTcpSocket *socket, QDataStream &in);
-
-    void broadcastToRoom(Room *room, MessageType type, const QByteArray &data);
-    void sendToPlayer(QTcpSocket *socket, MessageType type, const QByteArray &data);
-    void sendGameState(Room *room);
-    void startGame(Room *room);
-    void checkGameOver(Room *room);
-    void sendRoomListToAll();
 };
 
 #endif // SERVER_H

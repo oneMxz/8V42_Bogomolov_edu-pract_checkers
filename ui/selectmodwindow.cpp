@@ -1,5 +1,3 @@
-
-
 #include "selectmodwindow.h"
 #include <QPainter>
 
@@ -14,13 +12,11 @@ ModeSelect::ModeSelect(QWidget *parent)
 
 void ModeSelect::setupUI()
 {
-    // Заголовок
     titleLabel = new QLabel("Выберите режим игры", this);
     titleLabel->setAlignment(Qt::AlignCenter);
     titleLabel->setFont(QFont("Arial", 18, QFont::Bold));
     titleLabel->setStyleSheet("color: #2c3e50; padding: 20px;");
 
-    // Кнопка "Против компьютера"
     aiButton = new QPushButton("Против компьютера", this);
     aiButton->setFont(QFont("Arial", 12));
     aiButton->setFixedSize(250, 45);
@@ -36,7 +32,6 @@ void ModeSelect::setupUI()
         "}"
         );
 
-    // Кнопка "На одном ПК"
     localButton = new QPushButton("На одном ПК", this);
     localButton->setFont(QFont("Arial", 12));
     localButton->setFixedSize(250, 45);
@@ -52,7 +47,6 @@ void ModeSelect::setupUI()
         "}"
         );
 
-    // Кнопка "По сети"
     networkButton = new QPushButton("По сети (онлайн)", this);
     networkButton->setFont(QFont("Arial", 12));
     networkButton->setFixedSize(250, 45);
@@ -68,7 +62,7 @@ void ModeSelect::setupUI()
         "}"
         );
 
-    // Кнопка "Назад"
+
     backButton = new QPushButton("← Назад", this);
     backButton->setFont(QFont("Arial", 11));
     backButton->setFixedSize(150, 35);
@@ -83,7 +77,6 @@ void ModeSelect::setupUI()
         "}"
         );
 
-    // Верстка
     QVBoxLayout *layout = new QVBoxLayout(this);
     layout->addStretch();
     layout->addWidget(titleLabel);

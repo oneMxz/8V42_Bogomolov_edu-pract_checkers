@@ -1,29 +1,26 @@
 #include <QApplication>
 #include <QInputDialog>
+#include <QMessageBox>
 #include "ui/mainwindow.h"
 #include "ui/selectmodwindow.h"
 #include "ui/checkerboard.h"
-#include "ui/networkwindow.h"  // ← ДОБАВИТЬ
-#include "network/server.h"    // ← ДОБАВИТЬ (если нужен локальный сервер)
+#include "ui/networkwindow.h"
+#include "network/client.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setStyle("Fusion");
 
-    // Создаём окна
     MainMenu menu;
     ModeSelect modeSelect;
     CheckerBoard board;
     NetworkWindow networkWindow;
-
-
     Client client;
 
-    // Передаём клиент в NetworkWindow
+    board.setClient(&client);
     networkWindow.setClient(&client);
 
-    // === СВЯЗИ МЕНЮ ===
     QObject::connect(&menu, &MainMenu::newGameRequested, [&]() {
         menu.hide();
         modeSelect.show();
@@ -33,7 +30,7 @@ int main(int argc, char *argv[])
         app.quit();
     });
 
-    // === ВЫБОР РЕЖИМА ===
+    //Выбор режима игры
     QObject::connect(&modeSelect, &ModeSelect::modeSelected, [&](ModeSelect::GameMode mode) {
         modeSelect.hide();
 
@@ -59,50 +56,40 @@ int main(int argc, char *argv[])
         }
     });
 
-    // === СЕТЕВОЙ РЕЖИМ ===
+    //Сетевой режим
     QObject::connect(&modeSelect, &ModeSelect::networkModeSelected, [&]() {
         modeSelect.hide();
 
-        // Запрашиваем имя игрока
         bool ok;
         QString name = QInputDialog::getText(nullptr, "Вход в игру",
                                              "Введите ваше имя:",
-                                             QLineEdit::Normal,
-                                             "Игрок", &ok);
-        if (!ok || name.isEmpty()) {
+                                             QLineEdit::Normal, "Игрок", &ok);
+        if (!ok || name.isEmpty())
             name = "Игрок";
-        }
 
-        // Запрашиваем адрес сервера
         QString host = QInputDialog::getText(nullptr, "Подключение к серверу",
                                              "Введите адрес сервера:",
-                                             QLineEdit::Normal,
-                                             "127.0.0.1", &ok);
-        if (!ok || host.isEmpty()) {
+                                             QLineEdit::Normal, "127.0.0.1", &ok);
+        if (!ok || host.isEmpty())
             host = "127.0.0.1";
-        }
 
         client.setPlayerName(name);
         networkWindow.setPlayerName(name);
         networkWindow.setWindowTitle("Сетевая игра - " + name);
 
-        // ===== СНАЧАЛА УСТАНАВЛИВАЕМ КЛИЕНТ =====
-        networkWindow.setClient(&client);
-
-        // ===== ПОТОМ ЗАПУСКАЕМ СЕРВЕР =====
         networkWindow.startServer();
-
         networkWindow.show();
 
-        // Подключаемся к серверу
         if (!client.connectToServer(host, 5555)) {
             QMessageBox::critical(nullptr, "Ошибка", "Не удалось подключиться к серверу");
             networkWindow.hide();
             modeSelect.show();
+        } else {
+            networkWindow.show();
         }
     });
 
-    // === ИЗ СЕТЕВОГО ОКНА В ИГРУ ===
+    //Из сетевого окна в игру
     QObject::connect(&networkWindow, &NetworkWindow::joinRoomRequested, [&]() {
         networkWindow.hide();
         board.setWindowTitle("Шашки - по сети");
@@ -119,21 +106,27 @@ int main(int argc, char *argv[])
         menu.show();
     });
 
-    // === ВЫХОД ИЗ ИГРЫ В МЕНЮ ===
+    //Выход из игры в меню (локальный режим)
     QObject::connect(&board, &CheckerBoard::exitToMenuRequested, [&]() {
         board.hide();
-        if (board.isNetworkMode()) {
+        if (board.isNetworkMode())
             client.disconnectFromServer();
-        }
         menu.show();
     });
 
+    //Выход из игры в лобби (сетевой режим)
+    QObject::connect(&board, &CheckerBoard::exitToLobbyRequested, [&]() {
+        board.hide();
+        networkWindow.resetState();
+        networkWindow.show();
+    });
+
+    //Возврат из выбора режима в меню
     QObject::connect(&modeSelect, &ModeSelect::backRequested, [&]() {
         modeSelect.hide();
         menu.show();
     });
 
-    // === ЗАПУСК ===
     menu.show();
     return app.exec();
 }
