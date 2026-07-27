@@ -124,7 +124,7 @@ jobs:
         shell: msys2 {0}
         run: |
           cd build
-          windeployqt release/checkers.exe --no-translations --no-quick-import --no-virtualkeyboard --no-opengl-sw
+          windeployqt release/checkers.exe --no-translations
 
       - name: Package (ZIP)
         shell: cmd
